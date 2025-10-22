@@ -1,0 +1,27 @@
+# azure-pipelines.yml
+trigger: none # This pipeline will be triggered by PRs (Build Validation)
+pr:
+  branches:
+    include:
+    - main # Or your default branch
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+steps:
+- task: NodeTool@0
+  inputs:
+    versionSpec: '18.x' # Use Node.js 18
+  displayName: 'Install Node.js'
+
+- script: |
+    npm ci
+  displayName: 'Install Dependencies'
+
+- script: |
+    npm run lint
+  displayName: 'Run ESLint'
+
+# Add your SonarQube, Hadolint, and Build steps here
+# - task: SonarQubePrepare@5
+#   ...
