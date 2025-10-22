@@ -1,0 +1,62 @@
+# This file configures ArgoCD to use SOPS and Azure Workload Identity.
+# Apply this to your cluster *after* ArgoCD is installed.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd # Assumes ArgoCD is in this namespace
+  labels:
+    app.kubernetes.io/name: argocd-cm
+    app.kubernetes.io/part-of: argocd
+data:
+  # Register SOPS as a Config Management Plugin
+  configManagementPlugins: |
+    - name: sops
+      generate:
+        command: ["/bin/sh", "-c"]
+        args: ["sops -d $ARGOCD_APP_PATH/*.sops.yaml 2>/dev/null || true"]
+---
+# This patches the argocd-repo-server deployment to use Workload Identity
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: argocd-repo-server
+  namespace: argocd # Assumes ArgoCD is in this namespace
+spec:
+  # This selector is required by the Deployment schema and
+  # must match the labels on the pod template.
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: argocd-repo-server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: argocd-repo-server
+    # --- END ADDED ---
+    spec:
+      serviceAccountName: argocd-repo-server # Must match our Tofu federated credential
+      containers:
+      - name: argocd-repo-server
+        # Add environment variables needed for Azure authentication
+        env:
+        # Replace these placeholders with your actual values.
+        - name: AZURE_TENANT_ID
+          value: "<YOUR-TENANT-ID>"
+        - name: AZURE_CLIENT_ID
+          value: "<CLIENT-ID-FROM-TOFU-OUTPUT>" # The output 'argocd_identity_client_id'
+        - name: AZURE_FEDERATED_TOKEN_FILE
+          value: /var/run/secrets/azure/tokens/azure-identity-token
+        volumeMounts:
+        # Mount the projected service account token
+        - name: azure-identity-token
+          mountPath: /var/run/secrets/azure/tokens
+          readOnly: true
+      volumes:
+      # Volume for the projected service account token
+      - name: azure-identity-token
+        projected:
+          sources:
+          - serviceAccountToken:
+              path: azure-identity-token
+              audience: api://AzureADTokenExchange
+              expirationSeconds: 3600

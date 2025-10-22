@@ -1,0 +1,19 @@
+# egress-network-policy.yaml
+# K8s-Manifests-mycorp/policies/default-egress-deny.yaml
+apiVersion: "cilium.io/v1alpha1" # This API is used by Azure CNI
+kind: AzureNetworkPolicy
+metadata:
+  name: default-deny-all-egress
+spec:
+  podSelector: {} # Applies to all pods
+  egress:
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+    ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+  policyType:
+  - Egress

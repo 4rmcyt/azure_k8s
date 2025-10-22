@@ -1,0 +1,8 @@
+# This file tells SOPS which key to use for encryption.
+# Place this in the root of your K8s-Manifests-mycorp repository.
+creation_rules:
+  - path_regex: .*.yaml
+    # --- IMPORTANT ---
+    # You MUST replace <YOUR-KEY-VAULT-NAME> with your actual Key Vault name.
+    # Example: "https://kv-beta-gitops.vault.azure.net/keys/sops-master-key"
+    azure_keyvault: "https://<YOUR-KEY-VAULT-NAME>.vault.azure.net/keys/sops-master-key"

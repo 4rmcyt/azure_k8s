@@ -1,0 +1,108 @@
+# K8s-Manifests-mycorp/apps/monitoring-stack-app.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring-stack
+  namespace: argocd # Assumes ArgoCD is in this namespace
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: monitoring # Deploy the stack into its own namespace
+  
+  # Source for the PostgreSQL database (for Grafana/SonarQube)
+  # This uses the Bitnami Helm chart
+  source:
+    repoURL: 'https://charts.bitnami.com/bitnami'
+    targetRevision: '14.0.5' # Use a specific, tested chart version
+    chart: postgresql
+    helm:
+      values: |
+        # --- MODIFIED SECTION ---
+        auth:
+          database: "toolsdb"
+          username: "admin"
+          
+          # Tell the chart to use our existing secret
+          # It will look for a secret named 'sonarqube-db-secrets' (from our SOPS file)
+          # and use the key 'POSTGRES_PASSWORD' from it.
+          existingSecret: "sonarqube-db-secrets"
+          secretKeys:
+            adminPasswordKey: "POSTGRES_PASSWORD"
+        # --- END MODIFIED SECTION ---
+        primary:
+          persistence:
+            storageClass: "premium-stateful-sc" # Use our custom StorageClass
+            size: 10Gi
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prometheus-grafana
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: monitoring
+  
+  # Source for the kube-prometheus-stack
+  source:
+    repoURL: 'https://prometheus-community.github.io/helm-charts'
+    targetRevision: '51.8.0' # Use a specific, tested chart version
+    chart: kube-prometheus-stack
+    helm:
+      values: |
+        grafana:
+          enabled: true
+          persistence:
+            enabled: false # State is in PostgreSQL
+          adminPassword: "YourSecretGrafanaPassword" # Change this, or manage with SOPS secret
+          
+          # --- MODIFIED SECTION ---
+          # This config now points to the PostgreSQL instance and uses
+          # the secret we created with SOPS.
+          grafana.ini:
+            database:
+              type: postgres
+              host: postgresql.monitoring.svc.cluster.local:5432
+              name: toolsdb
+              user: admin
+              # This tells Grafana to get the password from the k8s secret
+              password: "$__file{/var/run/secrets/grafana/db/POSTGRES_PASSWORD}"
+          
+          # Mount the Kubernetes secret (created by SOPS) into Grafana
+          extraSecretMounts:
+            - name: grafana-db-password
+              secretName: sonarqube-db-secrets # Use the same secret
+              mountPath: /var/run/secrets/grafana/db
+              defaultMode: 0400
+              readOnly: true
+          # --- END MODIFIED SECTION ---
+
+        prometheus:
+          prometheusSpec:
+            storageSpec:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: "premium-stateful-sc"
+                  accessModes: ["ReadWriteOnce"]
+                  resources:
+                    requests:
+                      storage: 50Gi
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true

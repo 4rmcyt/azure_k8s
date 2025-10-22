@@ -1,0 +1,65 @@
+# suricata-daemonset.yaml
+# K8s-Manifests-mycorp/security/suricata-ds.yaml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: suricata
+  namespace: kube-system # Run this in a system namespace
+  labels:
+    k8s-app: suricata
+spec:
+  selector:
+    matchLabels:
+      k8s-app: suricata
+  template:
+    metadata:
+      labels:
+        k8s-app: suricata
+    spec:
+      hostNetwork: true # Required to monitor host traffic
+      hostPID: true
+      tolerations:
+      - operator: Exists
+        effect: NoSchedule
+      - operator: Exists
+        effect: NoExecute
+      containers:
+      - name: suricata
+        image: jasonish/suricata:latest # Use a stable, well-maintained image
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          privileged: true # Required for network access
+        volumeMounts:
+        - name: suricata-logs
+          mountPath: /var/log/suricata
+        - name: suricata-config
+          mountPath: /etc/suricata/suricata.yaml
+          subPath: suricata.yaml
+      volumes:
+      - name: suricata-logs
+        hostPath:
+          path: /var/log/suricata
+          type: DirectoryOrCreate
+      - name: suricata-config
+        configMap:
+          name: suricata-config
+---
+# A placeholder ConfigMap. You MUST populate this with a valid suricata.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: suricata-config
+  namespace: kube-system
+data:
+  suricata.yaml: |
+    #
+    # A full suricata.yaml configuration is required here.
+    # This is a complex file. Start with the default:
+    # https://github.com/OISF/suricata/blob/master/suricata.yaml.in
+    #
+    # Key settings to check:
+    # - %YAML 1.1
+    # - af-packet:
+    #   - interface: eth0 # Or the primary interface of your AKS nodes
+    # - default-log-dir: /var/log/suricata
+    #
